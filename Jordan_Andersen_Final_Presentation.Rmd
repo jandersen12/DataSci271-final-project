@@ -1,0 +1,411 @@
+---
+title: "Final Presentation"
+subtitle: "Stationarity and Unit Root Tests"
+output: pdf_document
+author: Jordan Andersen
+date: "`r Sys.Date()`"
+bibliography: references.bib
+csl: apa.csl
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r load libraries, message=FALSE, warning=FALSE, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(tseries)
+library(stargazer)
+library(dplyr)
+```
+
+# Introduction and Motivation
+
+A stationary time series, following @Hyndman2018, is one whose statistical properties do not depend on the time at which the series is observed. Intuitively, this implies that any given section of the time series should "look like" any other section in the time series in terms of the joint distribution. While strict stationarity requires that all the joint distributions of a series are time-invariant, weak stationarity requires only that the mean and variance are constant over time, and that the autocovariance is only dependent on the lag between observations, not on time. Weak stationarity is often more applicable in cases with real-world data.
+
+Stationarity is foundational to many time series models, including ARMA and ARIMA. These models assume constant variance, mean and autocovariance in order to make reliable predictions. When a series is non-stationary, often due to trends, shocks, seasonality or volatility, the models parameters become unstable and its predictions become unreliable. However, many real-world time series, especially those in economics and finance, are often non-stationary. This makes it essential to diagnose and address non-stationarity before attempting modeling and forecasting in order to produce reliable estimates.
+
+Unit root tests play a central role in this process. A time series has a unit root when its autoregressive coefficient equals one. This implies that shocks have permanent effects and the process does not necessarily follow a deterministic trend. If a series has a unit root, then it is *difference stationary* meaning the difference must be taken in order to achieve stationarity depending on the order (i.e the presence of one unit root indicates the process is first-difference stationary). Statistical tests such as the Augmented Dickey–Fuller (ADF), Phillips–Perron, and KPSS test evaluate whether a series is difference stationary. In contrast, trend-stationary processes may not have a unit root, but still show non-stationarity. When trend-stationary processes experience a shock, the mean will revert back to the unaffected growing mean, whereas a shock to a unit root process will have a permanent impact on the mean. This difference is important to consider when applying transformations to a non-stationary process since differencing a trend-stationary process is less efficient than de-trending it.
+
+Achieving a stationary series is also crucial when analyzing relationships among multiple time series. Non-stationary series that share similar stochastic trends can exhibit spurious correlations, where high correlation arises solely from the shared stochastic trends rather than any meaningful economic relationship. @Granger1974 demonstrated that autocorrelations in the residuals, a sign of non-stationarity, produced spurious correlations and high $R^2$ values, recommending that methods such as first-differencing be applied to achieve stationarity before producing forecasts. A popular modern example is to consider the time series of ice cream sales and average drownings, which naturally share seasonal peaks in the summertime. If you were to correlate the series, you’ll find apparently strong relationships, even though the two are unrelated apart from their seasonailty, leading you to infer a causal relationship. Detecting the non-stationarity through unit root tests and differencing or removing the trend through detrending would help reveal the true variability.
+
+# Theoretical Background
+
+This section summarizes the principal methods used in the literature to detect and address non-stationarity in time series data. It outlines key assumptions underlying each method and compares their respective strengths and limitations.
+
+## Methods for detecting non-stationarity
+
+### Visual inspections in the EDA
+
+Exploratory data analysis is a natural starting point for assessing stationarity since many common forms of non-stationarity can be detected through visual inspection of plots. Visualizations of the raw time series may reveal apparent trends, structural breaks, seasonal patterns, or heteroskedastic variance. Trends look like persistent upward or downward movements without clear reversion to the mean, while seasonality looks like recurring fluctuations at regular intervals (for example, monthly or quarterly). Heteroskedasticity is observed when the magnitude of the variance changes systematically over time.
+
+Autocorrelation function (ACF) plots show the correlation of a time series with itself at different lags and are additional diagnostic tools used to detect non-stationarity. For a stationary series, the ACF shows a rapid decay toward zero, with most correlations falling within the statistical significance bounds after a small number of lags. In contrast, a slowly decaying ACF or repeated significant spikes at regular intervals often indicates non-stationarity through a deterministic trend or seasonality, respectively.
+
+Visual methods are intuitive and easy to implement using modern statistical software. However, they are inherently subjective and may be unreliable when trends are subtle, sample sizes are small, or autocorrelations lie very close to significance thresholds. For these reasons, formal unit root tests are generally required for more rigorous inference.
+
+### Unit root tests
+
+#### Augmented Dickey-Fuller test
+
+@Dickey1981 introduced a formal statistical framework for detecting unit roots in an autoregressive process. They considered the AR(1) process:$$
+Y_t=\alpha+pY_{t-1}+\epsilon_t
+$$and used maximum likelihood estimation to test the null hypothesis that $p=1$, indicating a unit root and therefore non-stationarity, against the alternative hypothesis $p<1$, indicating a stationary series. The Augmented Dickey-Fuller (ADF) test generalizes this framework by including lagged differences of $Y_t$ to account for higher order serial correlations. The ADF test provided one of the first and most widely used standardized test statistics for detecting a unit root, a critical development for economists at the time. However, the test has low power against alternative hypotheses that are very near to the unit root and is sensitive to the deterministic specification choices of intercept, intercept-only or intercept plus trend. It also performs poorly when there is heteroskedasticity in the residuals or structural breaks.
+
+#### Phillips-Perron test
+
+@Phillips1988 proposed a unit root test with the same null hypothesis as the ADF test, but allowed for serial correlation and heteroskedasticity in the errors. The PP test applies a correction to the test statistic that uses an estimate of the long-run variance of the errors. This made the PP test more robust to a wide class of models, like ARMA and ARIMA, that have serial correlation and heteroskedasticity in the errors. However, the test does depend on choices made for the bandwidth of the kernel that estimates the long-run variance, which can result in low-performance for the test, especially in finite samples.
+
+#### KPSS test
+
+@KPSS1991 proposed an alternative test in which the null hypothesis is that a series stationary around a deterministic trend and the alternative is the presence of a unit root. The series is decomposed into the sum of a deterministic trend, a random-walk component, and a stationary error term. They implement a Lagrange multiplier test to find whether the random walk component has zero variance. This reversal of the null hypothesis was motivated by the observation that many macroeconomic series fail to reject the unit root null in ADF and PP tests, potentially due to low power rather than true non-stationarity. The KPSS test therefore provides complementary evidence by directly testing whether stationarity can be rejected.
+
+Failing to reject the KPSS null does not prove that a series is stationary, but it indicates that there is insufficient evidence against it. The KPSS test provides a different approach to testing for stationarity and is especially useful when combined with ADF or PP tests to distinguish between difference-stationary, trend-stationary, and ambiguous cases. However, the KPSS test is particularly sensitive to structural breaks and not always robust to small samples, which can lead to spurious rejection of stationarity.
+
+## Methods for dealing with non-stationarity
+
+#### Differencing
+
+Differencing transforms a non-stationary series into a stationary one by computing changes between consecutive observations ( @Hyndman2018). Seasonal differencing applies the same principle across seasonal cycles, such as taking differences between observations twelve months apart for monthly data. In practice, the objective is to use the minimum number of differencing required to achieve stationarity. Over-differencing could introduce unnecessary moving-average dynamics, inflate forecast variance, and destroys meaningful long-run relationships among variables by removing too much information. Most economic time series are integrated of order zero or one, and it is rare for higher orders of integration to be required.
+
+#### De-trending
+
+When non-stationarity comes from a deterministic trend rather than a stochastic unit root, detrending may be more appropriate and efficient than differencing. This involves estimating and removing a deterministic trend component so that the remaining series is stationary.
+
+#### Transformations
+
+Transformations to stabilize the variance, usually by taking logarithms, are frequently applied to address heteroskedasticity and exponential growth patterns in time series data ( @Hyndman2018). These transformations can improve the reliability of both the visual diagnostics and unit root tests by making the variance approximately constant over time.
+
+# Simulation Study
+
+In their landmark paper on spurious correlations, @Granger1974 demonstrate that two independent non-stationary time series, when regressed on each other using OLS, can exhibit highly significant t-statistics and inflated $R^2$ values, despite being unrelated. This phenomenon arises because standard regression assumptions are violated when the underlying series contain unit roots.
+
+We replicate their simulation to show how two independent random walks can generate misleading regression results. We also extend their original analysis by applying modern unit root tests which were developed after the original paper and allow us to formally diagnose non-stationarity.
+
+Let $Y_t$ and $X_t$ be two independent random walks of length $T = 100$:
+
+$Y_t=Y_{t-1}+W_t,W_t\sim N(0,1)$
+
+$X_t=X_{t-1}+U_t,U_t \sim N(0,1)$
+
+where $W_t$ and $U_t$ are mutually independent Gaussian white-noise error terms.
+
+```{r simulate two independent random walks}
+set.seed(12)
+
+# Simulate two random walks with 100 time steps
+N <- 100
+
+X <- cumsum(rnorm(N))
+Y <- cumsum(rnorm(N))
+```
+
+```{r plot x and y series, echo=FALSE}
+plot.ts(data.frame(Y, X),
+        main = 'Two Independent Random Walks: X and Y')
+```
+
+Despite the fact that we know the two series are independent, regressing $Y_t$ on $X_t$ produces a highly significant coefficient (p-value \< 0.001) and an inflated $R^2$ value, suggesting a strong relationship between the two series.
+
+```{r spurious regression model, echo=FALSE, warning=FALSE, comment=NA}
+spurious_model <- lm(Y ~ X)
+stargazer(spurious_model,
+          type = 'text',
+          title = 'Spurious Correlation between X and Y'
+          )
+```
+
+Consistent with @Granger1974, our Monte Carlo simulations indicate a Type I error rate exceeding 70%, meaning that the null hypothesis of no relationship is falsely rejected in more than two-thirds of replications. Moreover, the average $R^2$ remains high across simulations, further reinforcing that the non-stationarity of two series can lead to false relationships where none exist.
+
+```{r monte carlo simulation, echo=FALSE}
+# Set number of simulations
+B <- 1000
+
+# Store pvalues and R squareds
+pvals <- numeric(B)
+r2s <- numeric(B)
+
+for (b in 1:B) {
+  # Simulate random walks
+  X <- cumsum(rnorm(100))
+  Y <- cumsum(rnorm(100))
+  
+  # Model the regression
+  m <- lm(Y~X)
+  
+  # Store values
+  pvals[b] <- summary(m)$coefficients[2,4]
+  r2s[b] <- summary(m)$r.squared
+}
+
+# Calculate type 1 error rate
+type1.error.rate <- mean(pvals < 0.05)
+
+# Calculate average r squared
+mean.r2s <- mean(r2s)
+
+sim.results <- data.frame(
+  Simulations = B,
+  Error_Rate = type1.error.rate,
+  Average_R_Squared = mean.r2s
+)
+
+knitr::kable(sim.results)
+```
+
+If unit root tests are applied prior to estimation, both series are found to be non-stationary. The ADF test fails to reject the null hypothesis of a unit root for both $X_t$ and $Y_t$, while the KPSS test strongly rejects the null hypothesis of stationarity around a deterministic trend (p \< 0.05), which is aligned with the generation of the data as a random walk. It also weakly rejects at the 10% level the null hypothesis of a unit root. The results of these tests provide strong evidence that both series are non-stationary and do not have a deterministic trend, meaning they require differencing before attempting modeling and forecasting.
+
+```{r unit root tests, echo=FALSE}
+# ADF
+x.adf <- adf.test(X, alternative = 'stationary')
+y.adf <- adf.test(Y, alternative = 'stationary')
+
+adf.results <- data.frame(
+  Series = c("X", "Y"),
+  ADF_Statistic = c(x.adf$statistic, y.adf$statistic),
+  ADF_P_Value = c(x.adf$p.value, y.adf$p.value),
+  Method = c(x.adf$method, y.adf$method)
+)
+
+knitr::kable(adf.results, digits = 4)
+```
+
+```{r KPSS test, echo=FALSE, warning=FALSE}
+x.kpss.l <- kpss.test(X, null = 'Level')
+y.kpss.l <- kpss.test(Y, null = 'Level')
+
+x.kpss.t <- kpss.test(X, null = 'Trend')
+y.kpss.t <- kpss.test(Y, null = 'Trend')
+
+
+kpss.results <- data.frame(
+  Series = c("X", "Y", "X", "Y"),
+  KPSS_Statistic = c(x.kpss.l$statistic, y.kpss.l$statistic,
+                     x.kpss.t$statistic, y.kpss.t$statistic),
+  KPSS_P_Value = c(x.kpss.l$p.value, y.kpss.l$p.value,
+                   x.kpss.t$p.value, y.kpss.t$p.value),
+  Method = c(x.kpss.l$method, y.kpss.l$method,
+             x.kpss.t$method, y.kpss.t$method)
+)
+
+knitr::kable(kpss.results, digits = 4)
+```
+
+After taking the first differences of both series, we no longer see a significant p-value and the $R^2$ decreases dramatically towards zero, indicating that there is not sufficient evidence of correlation between both of these series and that the previous regression produced a spurious correlation.
+
+```{r differenced X and Y, echo=FALSE, comment=NA, warning=FALSE}
+stationary_model <- lm(diff(Y) ~ diff(X))
+stargazer(stationary_model,
+          type = 'text',
+          title = 'Differenced Regression of X and Y')
+```
+
+This simulation illustrates how spurious regression arises shared stochastic trends rather than genuine economic or statistical relationships. Without looking for non-stationarity and testing for unit roots, we could wrongly assume strong predictive or causal relationships where they do not actually exist.
+
+# Practical Case Study
+
+In this case study, we examine annual constant Gross Domestic Product (GDP) data from the International Monetary Fund (IMF) to assess whether national GDP time series are stationary. We apply both the visual diagnostic techniques as described above and formal unit root tests to evaluate the time-series properties of GDP, and we assess the implications of these findings for transformation choices and forecasting.
+
+The data are drawn from the IMF World Economic Outlook (WEO) database (@IMF_annual_national_gdp) and consist of annual nominal constant GDP values, which have been adjusted to account for inflation, from 196 countries between 1980-2025. The figures are reported in the domestic currency in billions.
+
+To illustrate the concept of stationarity and the behavior of unit roots and trends across different macroeconomic contexts, this case study will focus on three countries: USA, Japan and Brazil. The United States serves as a benchmark advanced economy with a deterministic trend and multiple shocks, including the Global Financial Crisis and the COVID-19 recession. Japan represents an economy characterized by stagnated growth since the early 1990s, which provides an example of near unit root behavior and low test power. Brazil represents a high-volatility emerging economy that experienced extreme inflation and a major stabilization shift with the Real Plan in 1994, making it a good case of unit root misclassifications due to structural breaks. Together, these three countries provide a comprehensive case study for evaluating the importance of stationarity and unit root tests, as well as the limitations and reliability of the tests under varying circumstances.
+
+```{r import data, include=FALSE, message=FALSE}
+df <- read_csv('~/DataSci-271-StatMethods/mids-271-fall-25-central/Final_Presentation/Data/IMF_annual_national_gdp.csv')
+```
+
+```{r extract country data, include=FALSE}
+usa <- df %>%
+  filter(COUNTRY == 'United States') %>%
+  select(any_of(as.character(1980:2025))) %>%
+  pivot_longer(cols = `1980`:`2025`,
+               names_to = 'year',
+               values_to = 'value') %>%
+  mutate(year = as.numeric(year))
+
+japan <- df %>%
+  filter(COUNTRY == 'Japan') %>%
+  select(any_of(as.character(1980:2025))) %>%
+  pivot_longer(cols = `1980`:`2025`,
+               names_to = 'year',
+               values_to = 'value') %>%
+  mutate(year = as.numeric(year))
+
+brazil <- df %>%
+  filter(COUNTRY == 'Brazil') %>%
+  select(any_of(as.character(1980:2025))) %>%
+  pivot_longer(cols = `1980`:`2025`,
+               names_to = 'year',
+               values_to = 'value') %>%
+  mutate(year = as.numeric(year))
+```
+
+```{r inspect data, include=FALSE}
+str(usa)
+
+str(japan)
+
+str(brazil)
+```
+
+## Exploratory Data Analysis
+
+It's important to begin by exploring our data visually to see if there are any key indicators of non-stationarity, such as deterministic trends, heteroskedastic variance, structural breaks or seasonal elements. Visual inspection will provide us with insight into whether a series may require transformations, differencing, or de-trending prior to formal modeling and forecasting.
+
+In the time series plots, the United States shows a strong and persistent upward trend in GDP over the sample period, indicating long-run economic growth. There are two signficiant declines that are visible around 2008, corresponding to the Global Financial Crisis, and 2020, corresponding to the COVID-19 pandemic, indicating major structural shocks to the underlying trend. Japan’s GDP shows rapid growth leading up into 1990, followed by a prolonged period of stagnation with only modest increases afterwards. Brazil’s GDP appears relatively stagnant at low levels prior to the early 1990s, followed by a sustained growth phase, and then a noticeable flattening around 2010 before sharply increasing again in 2020, suggesting multiple structural changes in the distribution throughout the sample.
+
+Each of these visual patterns suggest that all three series may be non-stationary. These observations indicate that we should apply formal unit root tests in the analysis to distinguish between difference-stationary and trend-stationary dynamics, and assess what types of transformations are required before modeling and forecasting.
+
+```{r visualize examples, echo=FALSE, fig.width=5, fig.height=3, fig.show='hold', out.width='50%'}
+
+ggplot(data = usa, aes(x = year, y = value)) + 
+  geom_line() + 
+  labs(
+    title = 'USA GDP over time',
+    ylab = 'GDP (billions of USD)'
+  ) +
+  theme_minimal()
+
+ggplot(data = japan, aes(x = year, y = value)) + 
+  geom_line() +
+  labs(
+    title = 'Japan GDP over time',
+    ylab = 'GDP (billions of JPY)'
+  ) +
+  theme_minimal()
+
+ggplot(data = brazil, aes(x = year, y = value)) + 
+  geom_line() +
+  labs(
+    title = 'Brazil GDP over time',
+    ylab = 'GDP (billions of BRL)'
+  ) +
+  theme_minimal()
+
+```
+
+Visual inspection of the ACF plots for all three countries shows a slow decay in the autocorrelation across many lags. This pattern indicates either a unit root process or a strongly trending series and, in agreement with the above time series plots, suggests that the GDP series are likely non-stationary.
+
+```{r acf, echo=FALSE, fig.width=6, fig.height=4.5, fig.show='hold', out.width='60%'}
+par(mfrow = c(3,1), mar = c(4,4,3,2))
+
+acf(usa$value, main = 'USA')
+acf(japan$value, main = 'Japan')
+acf(brazil$value, main = 'Brazil')
+```
+
+## Unit Root Tests
+
+Now that we have visually inspected our data and found evidence of possible non-stationarity, the next step is to apply formal unit root tests to see if our speculations are supported. Looking at the results of the unit root tests for the USA GDP data, both the ADF and Phillips-Perron tests produce insignificant p-values, failing to reject the null hypothesis of a unit root. The KPSS level-stationary test, in agreement with the ADF and PP tests, rejects the null hypothesis of weak stationarity. However, the KPSS trend-stationary test fails to reject the null hypothesis of trend-stationarity, suggesting that the non-stationarity in the USA data is due to a deterministic trend. This tells us that applying a de-trending method could be more efficient than first-differencing.
+
+```{r usa unit root tests, echo=FALSE, warning=FALSE}
+usa.adf <- adf.test(usa$value, alternative = 'stationary')
+usa.pp <- pp.test(usa$value, alternative = 'stationary')
+usa.kpss.l <- kpss.test(usa$value, null = 'Level')
+usa.kpss.t <- kpss.test(usa$value, null = 'Trend')
+
+usa.tests <- data.frame(
+  Test = c("ADF", "Phillips–Perron", "KPSS (Level)", "KPSS (Trend)"),
+  Statistic = c(
+    usa.adf$statistic,
+    usa.pp$statistic,
+    usa.kpss.l$statistic,
+    usa.kpss.t$statistic
+  ),
+  P_Value = c(
+    usa.adf$p.value,
+    usa.pp$p.value,
+    usa.kpss.l$p.value,
+    usa.kpss.t$p.value
+  ),
+  H0 = c(
+    "Unit root (nonstationary)",
+    "Unit root (nonstationary)",
+    "Stationary (Level)",
+    "Stationary (Trend)"
+  )
+)
+
+
+knitr::kable(usa.tests, caption = "USA Unit Root and Stationarity Tests")
+```
+
+Now taking a look at the unit root tests for Japan's GDP, we see some similar results. The ADF test fails to reject the null hypothesis of a unit root, as does the Phillips-Perron. The KPSS level test also supports these findings by rejecting the null hypothesis of weak stationarity. However, the KPSS trend test rejects the null hypothesis of trend-stationarity as well. This suggests that Japan's GDP is not stationary around a deterministic trend, suggesting that shocks to the series will be persistent throughout time. The combination of these test results suggests that Japan's GDP is a near-unit-root series, rather than a clearly trend-stationary or difference-stationary series. This result highlights the difficulty that can arise when trying to distinguish between true unit roots and highly persistent stationary dynamics, an issue that was highlighted in the paper by @KPSS1991, where they discussed issues with standard unit root tests failing to reject the null if the process is highly persistent over time.
+
+```{r japan unit root tests, echo=FALSE, warning=FALSE}
+japan.adf <- adf.test(japan$value, alternative = 'stationary')
+japan.pp <- pp.test(japan$value, alternative = 'stationary')
+japan.kpss.l <- kpss.test(japan$value, null = 'Level')
+japan.kpss.t <- kpss.test(japan$value, null = 'Trend')
+
+japan.tests <- data.frame(
+  Test = c("ADF", "Phillips–Perron", "KPSS (Level)", "KPSS (Trend)"),
+  Statistic = c(
+    japan.adf$statistic,
+    japan.pp$statistic,
+    japan.kpss.l$statistic,
+    japan.kpss.t$statistic
+  ),
+  P_Value = c(
+    japan.adf$p.value,
+    japan.pp$p.value,
+    japan.kpss.l$p.value,
+    japan.kpss.t$p.value
+  ),
+  H0 = c(
+    "Unit root (nonstationary)",
+    "Unit root (nonstationary)",
+    "Stationary (Level)",
+    "Stationary (Trend)"
+  )
+)
+
+
+knitr::kable(japan.tests, caption = "Japan Unit Root and Stationarity Tests")
+```
+
+Finally, looking at the results from the unit root tests for Brazil's GDP, we see that the ADF and PP tests again fail to reject the null hypothesis of a unit root. The KPSS level test rejects the null hypothesis of stationarity, also indicating the presence of a unit root. However, the KPSS trend test produces a p-value \> 0.05 but less than 0.10. This suggests that Brazil's GDP *could* be trend stationary, but the evidence is weak. This is likely due to the structural shocks that we observed earlier in the data for Brazil, which can produce a series that looks like it has trending behavior, but it is not well captured from a deterministic trend. Recall from the theoretical background section that KPSS tests can be sensitive to structural breaks, leading sometimes to spurious rejections of the null hypothesis.
+
+```{r brazil unit root tests, echo=FALSE, warning=FALSE}
+brazil.adf <- adf.test(brazil$value, alternative = 'stationary')
+brazil.pp <- pp.test(brazil$value, alternative = 'stationary')
+brazil.kpss.l <- kpss.test(brazil$value, null = 'Level')
+brazil.kpss.t <- kpss.test(brazil$value, null = 'Trend')
+
+brazil.tests <- data.frame(
+  Test = c("ADF", "Phillips–Perron", "KPSS (Level)", "KPSS (Trend)"),
+  Statistic = c(
+    brazil.adf$statistic,
+    brazil.pp$statistic,
+    brazil.kpss.l$statistic,
+    brazil.kpss.t$statistic
+  ),
+  P_Value = c(
+    brazil.adf$p.value,
+    brazil.pp$p.value,
+    brazil.kpss.l$p.value,
+    brazil.kpss.t$p.value
+  ),
+  H0 = c(
+    "Unit root (nonstationary)",
+    "Unit root (nonstationary)",
+    "Stationary (Level)",
+    "Stationary (Trend)"
+  )
+)
+
+
+knitr::kable(brazil.tests, caption = "Brazil Unit Root and Stationarity Tests")
+```
+
+## Implications for Transformations and Modeling
+
+The unit root test results have direct and important implications for how each GDP series should be transformed prior to econometric modeling and forecasting. Because ARMA and ARIMA-type models require weak stationarity, failing to appropriately transform non-stationary series would lead to unstable parameter estimates, spurious relationships, and unreliable forecasts.
+
+For the United States, the KPSS trend-stationary test tells us that de-trending the series or including a time trend explicitly in the modeling equation, would be an appropriate transformation. This transformation preserves the long-run growth information while ensuring weak stationarity in the residuals. For Japan’s GDP series, first differencing is required to achieve stationarity before estimation. The results of the KPSS tests suggest that it may also be useful to create an ARIMA model based on growth rates rather than GDP levels, ensuring that forecasts reflect stochastic rather than deterministic long-run dynamics. For Brazil, simple detrending may be insufficient, while differencing risks discarding meaningful dynamics that result from the different structures in the series. A practical approach would involve first differencing combined with modeling the structural breaks. Future work could implement break-robust unit root tests to further improve the model's accuracy.
+
+From a forecasting perspective, misclassifying these integration properties would have serious consequences. Treating a difference-stationary series as trend-stationary would lead to systematically biased forecasts and underestimated uncertainty, while treating a trend-stationary series as difference-stationary would unnecessarily eliminate valuable long-run information. The appropriate transformations identified here by examining the stationarity of the series and implementing unit root tests ensure that forecast models produce statistically valid estimates.
+
+# Conclusions and Future Directions
+
+This report demonstrates that stationarity and unit root testing are not just diagnostic formalities, but foundational steps that determine valid modeling strategies, inference, and forecasting performance. Through theoretical discussion, Monte Carlo simulation, and an applied macroeconomic case study using IMF GDP data, we showed how non-stationarity produces spurious regression relationships, inflates goodness-of-fit measures, and undermines statistical validity when left unaddressed. The visual inspection and test results for the United States, Japan, and Brazil further illustrate the practical challenges of distinguishing difference-stationary, trend-stationary, and near-unit-root processes, especially in the presence of structural breaks. Together, these findings reinforce the necessity of combining visual diagnostics, complementary unit root tests, and economic context when analyzing real-world time series. Future work should incorporate break-robust testing procedures and explore cointegration among integrated macroeconomic variables to preserve long-run equilibrium relationships while maintaining statistical validity.
+
+# References
